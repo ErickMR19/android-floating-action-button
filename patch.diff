@@ -1,0 +1,276 @@
+diff --git a/library/src/main/java/com/getbase/floatingactionbutton/FloatingActionsMenu.java b/library/src/main/java/com/getbase/floatingactionbutton/FloatingActionsMenu.java
+index b5ae2c2..6f416b8 100644
+--- a/library/src/main/java/com/getbase/floatingactionbutton/FloatingActionsMenu.java
++++ b/library/src/main/java/com/getbase/floatingactionbutton/FloatingActionsMenu.java
+@@ -5,6 +5,7 @@
+ import android.animation.AnimatorSet;
+ import android.animation.ObjectAnimator;
+ import android.content.Context;
++import android.content.res.Resources;
+ import android.content.res.TypedArray;
+ import android.graphics.Canvas;
+ import android.graphics.Rect;
+@@ -42,6 +43,8 @@
+   private int mAddButtonColorPressed;
+   private int mAddButtonSize;
+   private boolean mAddButtonStrokeVisible;
++  private int mAddButtonIcon;
++  private int mAddButtonIconPressed;
+   private int mExpandDirection;
+ 
+   private int mButtonSpacing;
+@@ -52,8 +55,8 @@
+ 
+   private AnimatorSet mExpandAnimation = new AnimatorSet().setDuration(ANIMATION_DURATION);
+   private AnimatorSet mCollapseAnimation = new AnimatorSet().setDuration(ANIMATION_DURATION);
+-  private AddFloatingActionButton mAddButton;
+-  private RotatingDrawable mRotatingDrawable;
++  private FloatingActionButton mAddButton;
++  private AnimatingDrawable mAnimatingDrawable;
+   private int mMaxButtonWidth;
+   private int mMaxButtonHeight;
+   private int mLabelsStyle;
+@@ -97,6 +100,8 @@ private void init(Context context, AttributeSet attributeSet) {
+     mAddButtonColorPressed = attr.getColor(R.styleable.FloatingActionsMenu_fab_addButtonColorPressed, getColor(android.R.color.holo_blue_light));
+     mAddButtonSize = attr.getInt(R.styleable.FloatingActionsMenu_fab_addButtonSize, FloatingActionButton.SIZE_NORMAL);
+     mAddButtonStrokeVisible = attr.getBoolean(R.styleable.FloatingActionsMenu_fab_addButtonStrokeVisible, true);
++    mAddButtonIcon = attr.getResourceId(R.styleable.FloatingActionsMenu_fab_addButtonIcon, 0);
++    mAddButtonIconPressed = attr.getResourceId(R.styleable.FloatingActionsMenu_fab_addButtonIconPressed, 0);
+     mExpandDirection = attr.getInt(R.styleable.FloatingActionsMenu_fab_expandDirection, EXPAND_UP);
+     mLabelsStyle = attr.getResourceId(R.styleable.FloatingActionsMenu_fab_labelStyle, 0);
+     mLabelsPosition = attr.getInt(R.styleable.FloatingActionsMenu_fab_labelsPosition, LABELS_ON_LEFT_SIDE);
+@@ -117,63 +122,123 @@ private boolean expandsHorizontally() {
+     return mExpandDirection == EXPAND_LEFT || mExpandDirection == EXPAND_RIGHT;
+   }
+ 
+-  private static class RotatingDrawable extends LayerDrawable {
+-    public RotatingDrawable(Drawable drawable) {
+-      super(new Drawable[] { drawable });
+-    }
++  private static abstract class AnimatingDrawable extends LayerDrawable {
+ 
+-    private float mRotation;
++    protected float mProgress;
++
++    public AnimatingDrawable(Drawable[] layers) {
++      super(layers);
++    }
+ 
+     @SuppressWarnings("UnusedDeclaration")
+-    public float getRotation() {
+-      return mRotation;
++    public float getProgress() {
++      return mProgress;
+     }
+ 
+     @SuppressWarnings("UnusedDeclaration")
+-    public void setRotation(float rotation) {
+-      mRotation = rotation;
++    public void setProgress(float progress) {
++      mProgress = progress;
+       invalidateSelf();
+     }
++  }
++
++  private static class RotatingDrawable extends AnimatingDrawable {
++
++    private final float mStartRotation;
++    private final float mEndRotation;
++
++    public RotatingDrawable(Drawable drawable, float startRotation, float endRotation) {
++      super(new Drawable[] { drawable });
++      mStartRotation = startRotation;
++      mEndRotation = endRotation;
++    }
+ 
+     @Override
+     public void draw(Canvas canvas) {
+       canvas.save();
+-      canvas.rotate(mRotation, getBounds().centerX(), getBounds().centerY());
++      canvas.rotate(mStartRotation * (1 - mProgress) + mEndRotation * mProgress, getBounds().centerX(), getBounds().centerY());
+       super.draw(canvas);
+       canvas.restore();
+     }
+   }
+ 
+-  private void createAddButton(Context context) {
+-    mAddButton = new AddFloatingActionButton(context) {
+-      @Override
+-      void updateBackground() {
+-        mPlusColor = mAddButtonPlusColor;
+-        mColorNormal = mAddButtonColorNormal;
+-        mColorPressed = mAddButtonColorPressed;
+-        mStrokeVisible = mAddButtonStrokeVisible;
+-        super.updateBackground();
+-      }
++  private static class SwitchingDrawable extends AnimatingDrawable {
+ 
+-      @Override
+-      Drawable getIconDrawable() {
+-        final RotatingDrawable rotatingDrawable = new RotatingDrawable(super.getIconDrawable());
+-        mRotatingDrawable = rotatingDrawable;
++    private Drawable mStartDrawable;
++    private Drawable mEndDrawable;
+ 
+-        final OvershootInterpolator interpolator = new OvershootInterpolator();
++    public SwitchingDrawable(Drawable startDrawable) {
++      super(new Drawable[] {startDrawable});
++      mStartDrawable = startDrawable;
++    }
+ 
+-        final ObjectAnimator collapseAnimator = ObjectAnimator.ofFloat(rotatingDrawable, "rotation", EXPANDED_PLUS_ROTATION, COLLAPSED_PLUS_ROTATION);
+-        final ObjectAnimator expandAnimator = ObjectAnimator.ofFloat(rotatingDrawable, "rotation", COLLAPSED_PLUS_ROTATION, EXPANDED_PLUS_ROTATION);
++    public SwitchingDrawable(Drawable starDrawable, Drawable endDrawable) {
++      super(new Drawable[] {starDrawable, endDrawable});
++      mStartDrawable = starDrawable;
++      mEndDrawable = endDrawable;
++    }
+ 
+-        collapseAnimator.setInterpolator(interpolator);
+-        expandAnimator.setInterpolator(interpolator);
++    @Override
++    public void draw(Canvas canvas) {
++      if (mEndDrawable == null) {
++        super.draw(canvas);
++        return;
++      }
+ 
+-        mExpandAnimation.play(expandAnimator);
+-        mCollapseAnimation.play(collapseAnimator);
++      canvas.save();
++      canvas.scale(1 - mProgress, 1 - mProgress, getBounds().centerX(), getBounds().centerY());
++      mStartDrawable.draw(canvas);
++      canvas.restore();
+ 
+-        return rotatingDrawable;
+-      }
+-    };
++      canvas.save();
++      canvas.scale(mProgress, mProgress, getBounds().centerX(), getBounds().centerY());
++      mEndDrawable.draw(canvas);
++      canvas.restore();
++    }
++  }
++
++  private void createAddButton(final Context context) {
++    if (mAddButtonIcon != 0) {
++        mAddButton = new FloatingActionButton(context) {
++          @Override
++          void updateBackground() {
++            mColorNormal = mAddButtonColorNormal;
++            mColorPressed = mAddButtonColorPressed;
++            mStrokeVisible = mAddButtonStrokeVisible;
++            super.updateBackground();
++          }
++
++          @Override
++          Drawable getIconDrawable() {
++            final Resources res = context.getResources();
++            final SwitchingDrawable drawable = mAddButtonIconPressed != 0 ?
++                    new SwitchingDrawable(res.getDrawable(mAddButtonIcon), res.getDrawable(mAddButtonIconPressed)) :
++                    new SwitchingDrawable(res.getDrawable(mAddButtonIcon));
++            mAnimatingDrawable = drawable;
++            setUpIconAnimation(drawable);
++            return drawable;
++          }
++        };
++    } else {
++        mAddButton = new AddFloatingActionButton(context) {
++            @Override
++            void updateBackground() {
++                mPlusColor = mAddButtonPlusColor;
++                mColorNormal = mAddButtonColorNormal;
++                mColorPressed = mAddButtonColorPressed;
++                mStrokeVisible = mAddButtonStrokeVisible;
++                super.updateBackground();
++            }
++
++            @Override
++            Drawable getIconDrawable() {
++                final RotatingDrawable rotatingDrawable = new RotatingDrawable(super.getIconDrawable(), COLLAPSED_PLUS_ROTATION, EXPANDED_PLUS_ROTATION);
++                mAnimatingDrawable = rotatingDrawable;
++                setUpIconAnimation(rotatingDrawable);
++                return rotatingDrawable;
++            }
++        };
++    }
+ 
+     mAddButton.setId(R.id.fab_expand_menu_button);
+     mAddButton.setSize(mAddButtonSize);
+@@ -188,6 +253,19 @@ public void onClick(View v) {
+     mButtonsCount++;
+   }
+ 
++  private void setUpIconAnimation(AnimatingDrawable animatingDrawable) {
++    final OvershootInterpolator interpolator = new OvershootInterpolator();
++
++    final ObjectAnimator collapseAnimator = ObjectAnimator.ofFloat(animatingDrawable, "progress", 1f, 0f);
++    final ObjectAnimator expandAnimator = ObjectAnimator.ofFloat(animatingDrawable, "progress", 0f, 1f);
++
++    collapseAnimator.setInterpolator(interpolator);
++    expandAnimator.setInterpolator(interpolator);
++
++    mExpandAnimation.play(expandAnimator);
++    mCollapseAnimation.play(collapseAnimator);
++  }
++
+   public void addButton(FloatingActionButton button) {
+     addView(button, mButtonsCount - 1);
+     mButtonsCount++;
+@@ -598,9 +676,7 @@ public void onRestoreInstanceState(Parcelable state) {
+       mExpanded = savedState.mExpanded;
+       mTouchDelegateGroup.setEnabled(mExpanded);
+ 
+-      if (mRotatingDrawable != null) {
+-        mRotatingDrawable.setRotation(mExpanded ? EXPANDED_PLUS_ROTATION : COLLAPSED_PLUS_ROTATION);
+-      }
++      mAnimatingDrawable.setProgress(mExpanded ? 1 : 0);
+ 
+       super.onRestoreInstanceState(savedState.getSuperState());
+     } else {
+diff --git a/library/src/main/res/values/attrs.xml b/library/src/main/res/values/attrs.xml
+index b9eaaf5..1423e65 100644
+--- a/library/src/main/res/values/attrs.xml
++++ b/library/src/main/res/values/attrs.xml
+@@ -24,6 +24,8 @@
+         </attr>
+         <attr name="fab_addButtonPlusIconColor" format="color"/>
+         <attr name="fab_addButtonStrokeVisible" format="boolean"/>
++        <attr name="fab_addButtonIcon" format="reference"/>
++        <attr name="fab_addButtonIconPressed" format="reference"/>
+         <attr name="fab_labelStyle" format="reference"/>
+         <attr name="fab_labelsPosition" format="enum">
+             <enum name="left" value="0"/>
+diff --git a/sample/src/main/res/drawable/ic_fab_circle.xml b/sample/src/main/res/drawable/ic_fab_circle.xml
+new file mode 100644
+index 0000000..61d9c98
+--- /dev/null
++++ b/sample/src/main/res/drawable/ic_fab_circle.xml
+@@ -0,0 +1,8 @@
++<?xml version="1.0" encoding="utf-8"?>
++<selector xmlns:android="http://schemas.android.com/apk/res/android">
++    <item>
++        <shape android:shape="oval">
++            <solid android:color="@color/white" />
++        </shape>
++    </item>
++</selector>
+\ No newline at end of file
+diff --git a/sample/src/main/res/layout/activity_main.xml b/sample/src/main/res/layout/activity_main.xml
+index 3df473e..f272e2a 100644
+--- a/sample/src/main/res/layout/activity_main.xml
++++ b/sample/src/main/res/layout/activity_main.xml
+@@ -97,9 +97,10 @@
+         android:layout_alignParentBottom="true"
+         android:layout_alignParentRight="true"
+         android:layout_alignParentEnd="true"
+-        fab:fab_addButtonColorNormal="@color/white"
+-        fab:fab_addButtonColorPressed="@color/white_pressed"
+-        fab:fab_addButtonPlusIconColor="@color/half_black"
++        fab:fab_addButtonColorNormal="@color/pink"
++        fab:fab_addButtonColorPressed="@color/pink"
++        fab:fab_addButtonIcon="@drawable/ic_fab_star"
++        fab:fab_addButtonIconPressed="@drawable/ic_fab_circle"
+         fab:fab_labelStyle="@style/menu_labels_style"
+         android:layout_marginBottom="16dp"
+         android:layout_marginRight="16dp"
